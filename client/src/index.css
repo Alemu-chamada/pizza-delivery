@@ -1,0 +1,24 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { @apply m-0 min-w-[320px] overflow-x-hidden bg-cream font-sans text-ink antialiased; }
+  * { @apply box-border; }
+  button, a { -webkit-tap-highlight-color: transparent; }
+  a { @apply transition-colors; }
+  :focus-visible { @apply outline-none ring-2 ring-tomato ring-offset-2 ring-offset-cream; }
+  [disabled] { @apply cursor-not-allowed; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

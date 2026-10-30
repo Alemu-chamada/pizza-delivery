@@ -1,0 +1,10 @@
+{
+  "description": "Explore a premium pizza delivery experience, preview custom pizza options, and manage account access through polished, responsive sign-in and verification pages.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
