@@ -1,0 +1,26 @@
+{
+  "name": "pizza-delivery",
+  "version": "1.0.0",
+  "description": "Handcrafted artisan pizza delivery full-stack web application (Dough & Co.)",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "server": "node server/server.js",
+    "client": "npm run dev --prefix client",
+    "build": "npm run build --prefix client",
+    "test": "npm test --prefix server",
+    "lint": "npm run lint --prefix server",
+    "seed": "node server/src/scripts/seedAdmin.js && node server/src/scripts/seedPizzaOptions.js",
+    "install:all": "npm install --prefix server && npm install --prefix client"
+  },
+  "keywords": [
+    "pizza-delivery",
+    "react",
+    "vite",
+    "express",
+    "mongodb",
+    "tailwindcss"
+  ],
+  "author": "Alemu Chamada",
+  "license": "ISC"
+}

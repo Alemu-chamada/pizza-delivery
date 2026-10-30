@@ -171,9 +171,34 @@ VITE_RAZORPAY_KEY_ID=rzp_test_placeholder
 ### 1. Prerequisites
 - **Node.js:** v20.x or v22+
 - **npm:** v10+
-- **MongoDB:** Active MongoDB Atlas cluster or local MongoDB instance
+- **MongoDB:** Local MongoDB replica set or MongoDB Atlas
 
-### 2. Backend Setup
+---
+
+### ⚡ Quick Start: One Command for Both Server & Client (Recommended)
+
+You can launch the complete full-stack application with a single command from the root directory:
+
+```bash
+# Install dependencies for both server and client in one step
+npm run install:all
+
+# Start local MongoDB (if needed), Express Backend (port 5001), and Vite Frontend (port 5173) concurrently
+npm run dev
+```
+
+Once running:
+- **Frontend App:** [http://localhost:5173](http://localhost:5173)
+- **Backend API:** [http://localhost:5001](http://localhost:5001)
+- Press `Ctrl+C` to cleanly stop all services.
+
+---
+
+### 🛠️ Manual / Individual Component Setup
+
+If you prefer to run services in separate terminals:
+
+#### Backend Setup
 ```bash
 # Navigate to server directory
 cd server
@@ -189,10 +214,10 @@ npm run seed:options
 
 # Start development server
 npm run dev
-# Server will listen on http://localhost:5000 (MongoDB connection & transactions verified)
+# Server will listen on http://localhost:5001
 ```
 
-### 3. Frontend Setup
+#### Frontend Setup
 ```bash
 # In a separate terminal, navigate to client directory
 cd client
@@ -203,6 +228,7 @@ npm install
 # Start Vite development server
 npm run dev
 # Client will be accessible at http://localhost:5173
+```
 ```
 
 ---
