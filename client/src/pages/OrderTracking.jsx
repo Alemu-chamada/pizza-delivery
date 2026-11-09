@@ -153,7 +153,7 @@ export function OrderTracking() {
             Order total
           </span>
           <div className="mt-2 font-display text-4xl font-bold text-tomato">
-            ₹{Number(order.total).toFixed(2)}
+            {Number(order.total).toFixed(2)} ETB
           </div>
           <div className="mt-6 border-t border-stone-200 pt-5 text-sm">
             <div className="flex justify-between">

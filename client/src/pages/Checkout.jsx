@@ -103,7 +103,7 @@ export function Checkout() {
             <div className="mt-6 space-y-3 border-y border-stone-200 py-5 text-sm">
               <div className="flex justify-between text-stone-600">
                 <span>Pizza subtotal</span>
-                <span>₹{total.toFixed(2)}</span>
+                <span>{total.toFixed(2)} ETB</span>
               </div>
               <div className="flex justify-between text-stone-600">
                 <span>Delivery</span>
@@ -114,7 +114,7 @@ export function Checkout() {
             <div className="flex items-center justify-between py-6">
               <span className="font-bold">Total</span>
               <span className="font-display text-3xl font-bold text-tomato">
-                ₹{total.toFixed(2)}
+                {total.toFixed(2)} ETB
               </span>
             </div>
 
@@ -124,7 +124,7 @@ export function Checkout() {
 
             <div className="mt-4 flex items-start gap-2 text-xs leading-5 text-stone-500">
               <ShieldCheck size={16} className="mt-0.5 shrink-0 text-green-700" />
-              <span>Payment is securely handled by Razorpay. No card details are stored here.</span>
+              <span>Payment is securely handled by Chapa (Test Mode). No card details are stored here.</span>
             </div>
             <p className="mt-4 text-xs leading-5 text-stone-500">
               Authoritative pricing and inventory availability will be verified by the backend.

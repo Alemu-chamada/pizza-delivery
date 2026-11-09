@@ -107,7 +107,6 @@ const updateInventoryItem = async (req, res) => {
 
 /**
  * Retrieve all customer orders, sorted newest first, with populated customer and item details.
- * Strictly excludes sensitive razorpaySignature.
  * GET /api/admin/orders
  */
 const getAllOrders = async (req, res) => {
@@ -158,7 +157,7 @@ const updateOrderStatus = async (req, res) => {
       );
     }
 
-    const order = await Order.findById(orderId).select('-razorpaySignature');
+    const order = await Order.findById(orderId);
     if (!order) {
       return errorResponse(res, 'Order not found', 404);
     }

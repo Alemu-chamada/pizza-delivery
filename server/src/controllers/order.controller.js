@@ -7,17 +7,128 @@ const { successResponse, errorResponse } = require('../utils/apiResponse');
 
 /**
  * Order Controller
- * Manages order creation, price computation, Razorpay test payment,
- * server-side signature verification, and atomic inventory decrements.
- * Plan Reference: project_plan.md §6.5, §7.3, §9.6, §10.3, §13, §15.2
+ * Manages order creation, price computation in ETB, Chapa test payment initialization,
+ * authoritative server-side verification, idempotent finalization, and atomic inventory decrements.
  */
 
 /**
- * Validates pizza options, computes authoritative price from DB,
- * checks inventory, creates a Razorpay order, and saves a pending Order.
- * POST /api/orders/create-razorpay-order
+ * Helper to finalize an order payment idempotently.
+ * Validates transaction data, checks stock, atomically decrements inventory, and marks order paid.
+ *
+ * @param {Order} order - Mongoose order document
+ * @param {object} verificationData - Verified data from Chapa API
+ * @returns {Promise<{ order: Order, alreadyPaid: boolean }>}
  */
-const createRazorpayOrder = async (req, res) => {
+/* eslint-disable no-param-reassign */
+const finalizeOrderPayment = async (order, verificationData) => {
+  // 1. Idempotency check: if already confirmed, do not double-decrement or modify
+  if (order.paymentStatus === 'paid') {
+    return { order, alreadyPaid: true };
+  }
+
+  // 2. Validate payment status
+  const paidStatus = (verificationData.status || '').toLowerCase();
+  if (paidStatus === 'pending') {
+    const err = new Error('Payment is still pending with Chapa. Please complete the transaction.');
+    err.statusCode = 400;
+    err.code = 'PAYMENT_PENDING';
+    throw err;
+  }
+  if (paidStatus !== 'success') {
+    order.paymentStatus = 'failed';
+    await order.save();
+    const err = new Error(`Payment verification failed: status is ${paidStatus}`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // 3. Validate currency
+  const paidCurrency = (verificationData.currency || '').toUpperCase();
+  if (paidCurrency !== 'ETB') {
+    order.paymentStatus = 'failed';
+    await order.save();
+    const err = new Error(`Currency mismatch: expected ETB, received ${paidCurrency}`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // 4. Validate authoritative amount
+  const expectedAmount = Number(order.totalPrice);
+  const paidAmount = Number(verificationData.amount);
+  if (Math.abs(expectedAmount - paidAmount) > 0.01) {
+    order.paymentStatus = 'failed';
+    await order.save();
+    const err = new Error(
+      `Payment amount mismatch: expected ${expectedAmount} ETB, got ${paidAmount} ETB`,
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // 5. Re-check stock levels to prevent race conditions during checkout
+  const allOptionIds = [
+    order.items.base,
+    order.items.sauce,
+    order.items.cheese,
+    ...(order.items.vegetables || []),
+  ];
+
+  const postStockCheck = await inventoryService.checkStock(allOptionIds);
+  if (!postStockCheck.available) {
+    order.paymentStatus = 'failed';
+    await order.save();
+    const err = new Error(
+      `Ingredient out of stock during payment verification: ${postStockCheck.missingItem}`,
+    );
+    err.statusCode = 409;
+    throw err;
+  }
+
+  // 6. Atomic confirmation and inventory decrement
+  const isTxAvailable = global.TRANSACTION_AVAILABLE !== false;
+
+  if (isTxAvailable) {
+    const session = await mongoose.startSession();
+    try {
+      session.startTransaction();
+
+      // Decrement stock within transaction session
+      await inventoryService.decrementStock(allOptionIds, session);
+
+      // Update order state
+      order.paymentStatus = 'paid';
+      order.paymentReference = verificationData.reference || null;
+      order.paidAt = new Date();
+      order.updatedAt = new Date();
+      await order.save({ session });
+
+      await session.commitTransaction();
+    } catch (txErr) {
+      await session.abortTransaction();
+      throw txErr;
+    } finally {
+      session.endSession();
+    }
+  } else {
+    // Fallback sequenced write strategy for standalone / non-replica MongoDB
+    order.paymentStatus = 'paid';
+    order.paymentReference = verificationData.reference || null;
+    order.paidAt = new Date();
+    order.updatedAt = new Date();
+    await order.save();
+
+    await inventoryService.decrementStock(allOptionIds, null, order._id);
+  }
+
+  return { order, alreadyPaid: false };
+};
+
+/**
+ * Validates pizza options, computes authoritative price in ETB from DB,
+ * checks inventory, initializes a Chapa hosted checkout session, and creates a pending Order.
+ * POST /api/orders/create-order or POST /api/orders/create-chapa-order
+ */
+const createOrder = async (req, res) => {
   try {
     const {
       base,
@@ -94,7 +205,7 @@ const createRazorpayOrder = async (req, res) => {
       return errorResponse(res, `Option ${mismatchedVeg.name} is not a valid vegetable`, 400);
     }
 
-    // 5. Server-side authoritative price computation
+    // 5. Server-side authoritative price computation in ETB
     const vegTotal = vegOptions.reduce((acc, v) => acc + (v.basePrice || 0), 0);
     const totalPrice = (baseOption.basePrice || 0)
       + (sauceOption.basePrice || 0)
@@ -113,18 +224,54 @@ const createRazorpayOrder = async (req, res) => {
       return errorResponse(res, `Ingredient out of stock: ${stockStatus.missingItem}`, 409);
     }
 
-    // 7. Create Razorpay order in paise
-    const amountPaise = Math.round(totalPrice * 100);
-    let rzpOrder;
+    // 7. Generate a unique transaction reference and create pending Order
+    const dummyOrderId = new mongoose.Types.ObjectId();
+    const txRef = paymentService.generateTxRef();
+
+    const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+    const serverPort = process.env.PORT || 5001;
+    const serverOrigin = process.env.SERVER_ORIGIN || `http://localhost:${serverPort}`;
+
+    let returnUrl = `${clientOrigin}/payment?tx_ref=${encodeURIComponent(txRef)}`;
+    if (process.env.CHAPA_RETURN_URL) {
+      const baseReturn = process.env.CHAPA_RETURN_URL.replace(/\/+$/, '');
+      returnUrl = baseReturn.includes('tx_ref=')
+        ? baseReturn
+        : `${baseReturn}?tx_ref=${encodeURIComponent(txRef)}`;
+    }
+    const callbackUrl = process.env.CHAPA_CALLBACK_URL
+      || `${serverOrigin}/api/orders/chapa/webhook`;
+
+    // Split customer name
+    const nameParts = (req.user.name || 'Customer').trim().split(' ');
+    const firstName = nameParts[0] || 'Customer';
+    const lastName = nameParts.slice(1).join(' ') || 'User';
+
+    // 8. Initialize transaction with Chapa
+    let chapaResponse;
     try {
-      rzpOrder = await paymentService.createRazorpayOrder(amountPaise, 'INR');
-    } catch (rzpErr) {
-      console.error('Razorpay SDK order creation error:', rzpErr);
-      return errorResponse(res, 'Failed to create payment order with payment gateway', 502);
+      chapaResponse = await paymentService.initializeTransaction({
+        amount: totalPrice,
+        currency: 'ETB',
+        email: req.user.email,
+        firstName,
+        lastName,
+        txRef,
+        callbackUrl,
+        returnUrl,
+      });
+    } catch (chapaErr) {
+      console.error('Chapa API transaction initialization error:', chapaErr);
+      return errorResponse(
+        res,
+        'Failed to initialize payment with Chapa payment gateway',
+        502,
+      );
     }
 
-    // 8. Save pending Order document
+    // 9. Persist pending Order document
     const order = await Order.create({
+      _id: dummyOrderId,
       customer: req.user._id,
       items: {
         base: baseOption._id,
@@ -133,71 +280,59 @@ const createRazorpayOrder = async (req, res) => {
         vegetables: vegOptions.map((v) => v._id),
       },
       totalPrice,
+      currency: 'ETB',
       paymentStatus: 'pending',
       orderStatus: 'Order Received',
-      razorpayOrderId: rzpOrder.id,
+      paymentProvider: 'chapa',
+      txRef,
     });
 
     return successResponse(
       res,
       {
-        razorpayOrderId: rzpOrder.id,
-        amount: rzpOrder.amount,
-        currency: rzpOrder.currency,
         orderId: order._id,
+        txRef,
+        amount: order.totalPrice,
+        currency: 'ETB',
+        checkoutUrl: chapaResponse.checkoutUrl,
       },
       201,
+      'Order created and payment session initialized successfully',
     );
   } catch (err) {
-    console.error('Error in createRazorpayOrder:', err);
+    console.error('Error in createOrder:', err);
     return errorResponse(res, 'Internal server error creating order', 500);
   }
 };
 
 /**
- * Verifies Razorpay HMAC-SHA256 signature, enforces idempotency,
- * re-checks stock, and atomically confirms payment + decrements inventory.
+ * Verifies Chapa transaction server-side, validates txRef, amount, and currency,
+ * and atomically confirms payment + decrements inventory.
  * POST /api/orders/verify-payment
  */
 const verifyPayment = async (req, res) => {
   try {
-    const {
-      razorpayOrderId,
-      razorpayPaymentId,
-      razorpaySignature,
-    } = req.body;
+    const txRef = req.body.txRef || req.body.tx_ref;
+    const { orderId } = req.body;
 
-    // 1. Validate required inputs
-    if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
-      return errorResponse(
-        res,
-        'razorpayOrderId, razorpayPaymentId, and razorpaySignature are required',
-        400,
-      );
+    if (!txRef && !orderId) {
+      return errorResponse(res, 'txRef or orderId is required for payment verification', 400);
     }
 
-    // 2. Server-side HMAC-SHA256 signature verification
-    const isValidSignature = paymentService.verifySignature(
-      razorpayOrderId,
-      razorpayPaymentId,
-      razorpaySignature,
-    );
-    if (!isValidSignature) {
-      return errorResponse(res, 'Invalid payment signature', 400);
-    }
+    // Find order by txRef or orderId
+    const query = txRef ? { txRef } : { _id: orderId };
+    const order = await Order.findOne(query);
 
-    // 3. Look up order by razorpayOrderId
-    const order = await Order.findOne({ razorpayOrderId });
     if (!order) {
-      return errorResponse(res, 'Order not found for given Razorpay order ID', 404);
+      return errorResponse(res, 'Order not found for given transaction reference', 404);
     }
 
-    // 4. Ownership verification: ensure order belongs to authenticated customer
+    // Verify ownership
     if (order.customer.toString() !== req.user._id.toString()) {
       return errorResponse(res, 'Unauthorized: order belongs to another customer', 403);
     }
 
-    // 5. Idempotency check: if already confirmed, return success without side effects
+    // Idempotency check: if already confirmed, return success
     if (order.paymentStatus === 'paid') {
       return successResponse(
         res,
@@ -205,65 +340,25 @@ const verifyPayment = async (req, res) => {
           orderId: order._id,
           orderStatus: order.orderStatus,
           paymentStatus: order.paymentStatus,
+          total: order.totalPrice,
+          currency: order.currency || 'ETB',
           alreadyConfirmed: true,
         },
         200,
+        'Payment already verified and confirmed',
       );
     }
 
-    // 6. Re-check stock levels to prevent race conditions during payment
-    const allOptionIds = [
-      order.items.base,
-      order.items.sauce,
-      order.items.cheese,
-      ...(order.items.vegetables || []),
-    ];
-    const postStockCheck = await inventoryService.checkStock(allOptionIds);
-    if (!postStockCheck.available) {
-      return errorResponse(
-        res,
-        `Ingredient out of stock during payment verification: ${postStockCheck.missingItem}`,
-        409,
-      );
+    // Server-side authoritative verification directly with Chapa API
+    let verificationData;
+    try {
+      verificationData = await paymentService.verifyTransaction(order.txRef);
+    } catch (vErr) {
+      console.error('Chapa transaction verification error:', vErr.message);
+      return errorResponse(res, `Failed to verify payment with Chapa: ${vErr.message}`, 400);
     }
 
-    // 7. Atomic confirmation and inventory decrement
-    const isTxAvailable = global.TRANSACTION_AVAILABLE !== false;
-
-    if (isTxAvailable) {
-      const session = await mongoose.startSession();
-      try {
-        session.startTransaction();
-
-        // Decrement stock for all pizza ingredients within transaction session
-        await inventoryService.decrementStock(allOptionIds, session);
-
-        // Update order state to paid
-        order.paymentStatus = 'paid';
-        order.razorpayPaymentId = razorpayPaymentId;
-        order.razorpaySignature = razorpaySignature;
-        order.updatedAt = new Date();
-        await order.save({ session });
-
-        await session.commitTransaction();
-      } catch (txErr) {
-        await session.abortTransaction();
-        console.error('Transaction aborted during payment verification:', txErr);
-        return errorResponse(res, 'Failed to confirm order in database transaction', 500);
-      } finally {
-        session.endSession();
-      }
-    } else {
-      // Fallback sequenced write strategy per project_plan.md §9.7
-      order.paymentStatus = 'paid';
-      order.razorpayPaymentId = razorpayPaymentId;
-      order.razorpaySignature = razorpaySignature;
-      order.updatedAt = new Date();
-      await order.save();
-
-      // Decrement stock individually (sequenced fallback)
-      await inventoryService.decrementStock(allOptionIds, null, order._id);
-    }
+    const { alreadyPaid } = await finalizeOrderPayment(order, verificationData);
 
     return successResponse(
       res,
@@ -271,12 +366,64 @@ const verifyPayment = async (req, res) => {
         orderId: order._id,
         orderStatus: order.orderStatus,
         paymentStatus: order.paymentStatus,
+        total: order.totalPrice,
+        currency: order.currency || 'ETB',
+        alreadyConfirmed: alreadyPaid,
       },
       200,
+      'Payment verified and order confirmed successfully',
     );
   } catch (err) {
     console.error('Error in verifyPayment:', err);
-    return errorResponse(res, 'Internal server error verifying payment', 500);
+    const statusCode = err.statusCode || 500;
+    return errorResponse(res, err.message || 'Internal server error verifying payment', statusCode);
+  }
+};
+
+/**
+ * Verification endpoint via route param:
+ * GET /api/orders/verify/:txRef
+ */
+const verifyPaymentByParam = async (req, res) => {
+  req.body = { ...req.body, txRef: req.params.txRef };
+  return verifyPayment(req, res);
+};
+
+/**
+ * Server-to-server webhook callback from Chapa.
+ * POST /api/orders/chapa/webhook or POST /api/orders/webhook
+ */
+const handleChapaWebhook = async (req, res) => {
+  try {
+    const txRef = req.body?.tx_ref || req.body?.txRef;
+    if (!txRef) {
+      return errorResponse(res, 'Missing tx_ref in webhook payload', 400);
+    }
+
+    const order = await Order.findOne({ txRef });
+    if (!order) {
+      return errorResponse(res, 'Order not found for given tx_ref', 404);
+    }
+
+    if (order.paymentStatus === 'paid') {
+      return res.status(200).json({ status: 'already_paid' });
+    }
+
+    // Authoritative direct check with Chapa
+    const verificationData = await paymentService.verifyTransaction(txRef);
+    await finalizeOrderPayment(order, verificationData);
+
+    return res.status(200).json({
+      status: 'success',
+      orderId: order._id,
+    });
+  } catch (err) {
+    console.error('Chapa webhook processing error:', err.message);
+    const statusCode = err.statusCode || 500;
+    return res.status(statusCode).json({
+      status: 'error',
+      message: err.message,
+    });
   }
 };
 
@@ -303,7 +450,6 @@ const getMyOrders = async (req, res) => {
 
 /**
  * Returns orderStatus and tracking summary for customer polling.
- * Validates that order exists, orderId is valid ObjectId, and order belongs to req.user.
  * GET /api/orders/:orderId/status
  */
 const getOrderStatus = async (req, res) => {
@@ -315,7 +461,6 @@ const getOrderStatus = async (req, res) => {
     }
 
     const order = await Order.findById(orderId)
-      .select('-razorpaySignature')
       .populate('items.base')
       .populate('items.sauce')
       .populate('items.cheese')
@@ -337,6 +482,7 @@ const getOrderStatus = async (req, res) => {
         paymentStatus: order.paymentStatus,
         createdAt: order.createdAt,
         totalPrice: order.totalPrice,
+        currency: order.currency || 'ETB',
         items: order.items,
       },
       200,
@@ -348,8 +494,11 @@ const getOrderStatus = async (req, res) => {
 };
 
 module.exports = {
-  createRazorpayOrder,
+  createOrder,
+  createChapaOrder: createOrder, // Alias for clear naming
   verifyPayment,
+  verifyPaymentByParam,
+  handleChapaWebhook,
   getMyOrders,
   getOrderStatus,
 };

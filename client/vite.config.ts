@@ -1,10 +1,60 @@
-import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
+import { defineConfig, createLogger, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
 import path from 'node:path'
+import net from 'node:net'
 
-import siteConfiguration from './.figma/make/site.json'
+import siteConfiguration from './.figma/make/site.json' with { type: 'json' }
 
+const customLogger = createLogger()
+const originalError = customLogger.error.bind(customLogger)
+let lastProxyWarnTime = 0
+
+customLogger.error = (msg, options) => {
+  if (typeof msg === 'string' && (msg.includes('http proxy error') || msg.includes('AggregateError [ECONNREFUSED]'))) {
+    const now = Date.now()
+    if (now - lastProxyWarnTime > 3000) {
+      lastProxyWarnTime = now
+      const summary = msg.split('\n')[0].replace(/\x1b\[[0-9;]*m/g, '').trim()
+      console.warn(
+        `\x1b[33m[Vite Proxy Notice]\x1b[0m Backend at http://localhost:5001 is offline (${summary}). Run \x1b[1mnpm run dev\x1b[0m from project root.`
+      )
+    }
+    return
+  }
+  originalError(msg, options)
+}
+
+function backendReadinessBannerPlugin(): Plugin {
+  return {
+    name: 'backend-readiness-banner',
+    configureServer(server) {
+      const socket = new net.Socket()
+      socket.setTimeout(800)
+      socket.on('connect', () => {
+        socket.destroy()
+      })
+      const notifyOffline = () => {
+        setTimeout(() => {
+          server.config.logger.warn(
+            `\n\x1b[33m[NOTICE]\x1b[0m Backend server is not running on http://localhost:5001.\n` +
+            `         If you intended to run the full application (frontend + backend):\n` +
+            `         ➜ Run \x1b[1mnpm run dev\x1b[0m from the project root directory.\n` +
+            `         Or start backend independently: \x1b[1mcd server && npm run dev\x1b[0m\n`
+          )
+        }, 300)
+      }
+      socket.on('timeout', () => {
+        socket.destroy()
+        notifyOffline()
+      })
+      socket.on('error', () => {
+        notifyOffline()
+      })
+      socket.connect(5001, '127.0.0.1')
+    },
+  }
+}
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -12,13 +62,15 @@ export default defineConfig(({ mode }) => {
   const emitSourcemaps = mode === 'development'
 
   return {
+    customLogger,
     base: process.env.FIGMA_PUBLIC_URL ? `${process.env.FIGMA_PUBLIC_URL}/` : '/',
     build: {
       sourcemap: emitSourcemaps ? 'inline' : false,
       minify: !emitSourcemaps,
     },
     plugins: [
-react(),
+      react(),
+      backendReadinessBannerPlugin(),
       figmaSiteConfiguration(siteConfiguration),
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
@@ -27,7 +79,7 @@ react(),
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(import.meta.dirname, './src'),
       },
     },
     server: {
@@ -37,6 +89,24 @@ react(),
         '/api': {
           target: 'http://localhost:5001',
           changeOrigin: true,
+          configure: (proxy) => {
+            proxy.on('error', (_err, _req, res) => {
+              if (res && 'writeHead' in res && !res.headersSent) {
+                res.writeHead(503, {
+                  'Content-Type': 'application/json',
+                  'Retry-After': '5',
+                })
+                res.end(
+                  JSON.stringify({
+                    success: false,
+                    message: 'Backend server is unreachable at http://localhost:5001. Please start the backend.',
+                    error: 'BACKEND_UNAVAILABLE',
+                    target: 'http://localhost:5001',
+                  })
+                )
+              }
+            })
+          },
         },
       },
       watch: {
@@ -400,9 +470,9 @@ function figmaMakeKitPlugin(options: { storiesGlob: string | string[] }): Plugin
  * path, such as `libraries/<name>/`.
  */
 function figmaLinkedPackageSourcemaps(): Plugin {
-  const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'))
+  const packageJson = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8'))
   const linkedPackages = Object.keys({ ...packageJson.dependencies, ...packageJson.devDependencies }).flatMap((name) => {
-    const installedDir = path.resolve(__dirname, 'node_modules', name)
+    const installedDir = path.resolve(import.meta.dirname, 'node_modules', name)
     try {
       const realDir = fs.realpathSync(installedDir)
       return realDir.split(path.sep).includes('node_modules') ? [] : [{ installedDir, realDir }]

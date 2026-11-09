@@ -23,7 +23,7 @@ export function PizzaDetails({
             <p className="mt-1 font-semibold text-ink">{item?.name || "Not selected"}</p>
           </div>
           {showPrices && item && (
-            <span className="font-bold text-stone-700">₹{Number(item.price).toFixed(2)}</span>
+            <span className="font-bold text-stone-700">{Number(item.price).toFixed(2)} ETB</span>
           )}
         </div>
       ))}
@@ -36,7 +36,7 @@ export function PizzaDetails({
         </div>
         {showPrices && (
           <span className="font-bold text-stone-700">
-            ₹{vegetables.reduce((sum, item) => sum + (Number(item.price) || 0), 0).toFixed(2)}
+            {vegetables.reduce((sum, item) => sum + (Number(item.price) || 0), 0).toFixed(2)} ETB
           </span>
         )}
       </div>

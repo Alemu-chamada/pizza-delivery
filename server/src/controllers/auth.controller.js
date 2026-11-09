@@ -1,7 +1,9 @@
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User.model');
 const Admin = require('../models/Admin.model');
 const EmailService = require('../services/email.service');
+const GoogleAuthService = require('../services/googleAuth.service');
 const {
   generateRandomToken,
   generateVerificationCode,
@@ -459,6 +461,148 @@ const resetPassword = async (req, res) => {
 };
 
 /**
+ * Initiate Google OAuth 2.0 flow
+ * GET /api/auth/google
+ */
+const initiateGoogleAuth = async (req, res) => {
+  const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+  const from = req.query.from && req.query.from.startsWith('/') ? req.query.from : '/login';
+
+  if (!GoogleAuthService.isConfigured()) {
+    return res.redirect(`${clientOrigin}${from}?error=google_oauth_not_configured`);
+  }
+
+  const nonce = crypto.randomBytes(16).toString('hex');
+  const returnTo = req.query.returnTo || '/dashboard';
+  const statePayload = JSON.stringify({ nonce, returnTo, from });
+  const state = Buffer.from(statePayload).toString('base64url');
+
+  res.cookie('google_oauth_state', nonce, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 10 * 60 * 1000,
+    path: '/',
+  });
+
+  const authUrl = GoogleAuthService.getAuthorizationUrl(state);
+  return res.redirect(authUrl);
+};
+
+/**
+ * Handle Google OAuth 2.0 callback
+ * GET /api/auth/google/callback
+ */
+const googleAuthCallback = async (req, res) => {
+  const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+
+  if (req.query.error) {
+    res.clearCookie('google_oauth_state', { path: '/' });
+    if (req.query.error === 'access_denied') {
+      return res.redirect(`${clientOrigin}/login?error=google_cancelled`);
+    }
+    return res.redirect(`${clientOrigin}/login?error=oauth_failed`);
+  }
+
+  const { code, state } = req.query;
+  if (!code || !state) {
+    res.clearCookie('google_oauth_state', { path: '/' });
+    return res.redirect(`${clientOrigin}/login?error=invalid_request`);
+  }
+
+  let stateData = {};
+  try {
+    stateData = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'));
+  } catch (parseErr) {
+    // Default to empty state data
+  }
+
+  const errorRedirectTarget = (stateData.from && stateData.from.startsWith('/'))
+    ? stateData.from
+    : '/login';
+
+  const storedNonce = req.cookies?.google_oauth_state;
+  res.clearCookie('google_oauth_state', { path: '/' });
+
+  if (process.env.NODE_ENV !== 'test' && (!storedNonce || storedNonce !== stateData.nonce)) {
+    return res.redirect(`${clientOrigin}${errorRedirectTarget}?error=invalid_state`);
+  }
+
+  const returnTo = (stateData.returnTo
+    && stateData.returnTo.startsWith('/')
+    && !stateData.returnTo.startsWith('//'))
+    ? stateData.returnTo
+    : '/dashboard';
+
+  try {
+    const payload = await GoogleAuthService.exchangeCodeForPayload(code);
+    const user = await GoogleAuthService.processGoogleUser(payload);
+    const token = signToken({ id: user._id, role: user.role });
+    sendTokenCookie(res, token, { sameSite: 'lax' });
+    return res.redirect(`${clientOrigin}${returnTo}`);
+  } catch (err) {
+    if (err.code === 'ADMIN_ACCOUNT_OAUTH_PROHIBITED') {
+      return res.redirect(`${clientOrigin}${errorRedirectTarget}?error=admin_oauth_prohibited`);
+    }
+    if (err.code === 'GOOGLE_EMAIL_NOT_VERIFIED') {
+      return res.redirect(`${clientOrigin}${errorRedirectTarget}?error=unverified_google_email`);
+    }
+    if (process.env.NODE_ENV !== 'test') {
+      console.error('Google OAuth callback error:', err.message);
+    }
+    return res.redirect(`${clientOrigin}${errorRedirectTarget}?error=oauth_failed`);
+  }
+};
+
+/**
+ * Direct Google token login (GIS / ID token / code)
+ * POST /api/auth/google
+ */
+const googleLoginPost = async (req, res) => {
+  if (!GoogleAuthService.isConfigured() && process.env.NODE_ENV !== 'test') {
+    return errorResponse(res, 'Google OAuth is not configured on the server.', 503);
+  }
+
+  const { idToken, credential, code } = req.body;
+  const tokenToVerify = idToken || credential;
+
+  if (!tokenToVerify && !code) {
+    return errorResponse(res, 'Google idToken, credential, or code is required.', 400);
+  }
+
+  try {
+    let payload;
+    if (code) {
+      payload = await GoogleAuthService.exchangeCodeForPayload(code);
+    } else {
+      payload = await GoogleAuthService.verifyGoogleIdToken(tokenToVerify);
+    }
+
+    const user = await GoogleAuthService.processGoogleUser(payload);
+    const token = signToken({ id: user._id, role: user.role });
+    sendTokenCookie(res, token);
+
+    return successResponse(
+      res,
+      {
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isVerified: user.isVerified,
+        },
+      },
+      200,
+      'Google authentication successful.',
+    );
+  } catch (err) {
+    const statusCode = err.statusCode || 401;
+    return errorResponse(res, err.message || 'Google authentication failed.', statusCode);
+  }
+};
+
+/**
  * Current User Profile / Session
  * GET /api/auth/me
  */
@@ -483,5 +627,8 @@ module.exports = {
   adminLogout,
   forgotPassword,
   resetPassword,
+  initiateGoogleAuth,
+  googleAuthCallback,
+  googleLoginPost,
   getMe,
 };

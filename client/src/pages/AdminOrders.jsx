@@ -193,7 +193,7 @@ export function AdminOrders() {
                 <div>
                   <p className="text-sm leading-6 text-stone-600">{order.config}</p>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <span className="mr-2 font-bold">₹{Number(order.total).toFixed(2)}</span>
+                    <span className="mr-2 font-bold">{Number(order.total).toFixed(2)} ETB</span>
                     <span className="text-xs text-stone-400">Payment</span>
                     <StatusBadge tone={order.paymentStatus === "Paid" ? "success" : "neutral"}>
                       {order.paymentStatus}

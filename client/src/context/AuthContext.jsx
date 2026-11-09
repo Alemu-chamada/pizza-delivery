@@ -62,6 +62,24 @@ export function AuthProvider({ children }) {
     return res;
   };
 
+  const googleLogin = async (data) => {
+    const res = await authApi.googleAuth(data);
+    const resolvedUser = res?.data?.user || res?.data?.data?.user || res?.user;
+    if (resolvedUser) {
+      setUser(resolvedUser);
+    }
+    try {
+      const meRes = await authApi.getMe();
+      const meUser = meRes?.data?.user || meRes?.data?.data?.user || meRes?.user;
+      if (meUser) {
+        setUser(meUser);
+      }
+    } catch (e) {
+      // Keep resolvedUser
+    }
+    return res;
+  };
+
   const logout = async () => {
     try {
       if (user?.role === 'admin') {
@@ -83,6 +101,7 @@ export function AuthProvider({ children }) {
     refreshUser,
     login,
     adminLogin,
+    googleLogin,
     logout,
     isAuthenticated: !!user,
     isAdmin: user?.role === 'admin',

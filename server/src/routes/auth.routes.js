@@ -132,4 +132,17 @@ router.post(
 // 9. Current User Profile
 router.get('/me', requireAuth, asyncHandler(authController.getMe));
 
+// 10. Google OAuth 2.0 / OpenID Connect (Customer-Only)
+router.get('/google', asyncHandler(authController.initiateGoogleAuth));
+router.get('/google/callback', asyncHandler(authController.googleAuthCallback));
+router.post(
+  '/google',
+  validate([
+    body('idToken').optional().isString(),
+    body('credential').optional().isString(),
+    body('code').optional().isString(),
+  ]),
+  asyncHandler(authController.googleLoginPost),
+);
+
 module.exports = router;

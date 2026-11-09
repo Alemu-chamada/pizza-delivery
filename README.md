@@ -12,7 +12,7 @@
 The **Pizza Delivery Full-Stack Application** is a production-grade web application engineered to fulfill all Level 3 Task 1 requirements specified by the Oasis Infobyte internship program.
 
 The application delivers an end-to-end e-commerce experience:
-1. **Customer Journey:** Account registration with email verification, secure cookie-based JWT authentication, interactive 4-step custom pizza builder, server-authoritative dynamic pricing, Razorpay test-mode payment gateway integration, order confirmation, and real-time order status tracking with a 3-stage visual progress stepper.
+1. **Customer Journey:** Account registration with email verification code, Google OAuth 2.0 / OpenID Connect single sign-on, secure cookie-based JWT authentication, interactive 4-step custom pizza builder, server-authoritative dynamic pricing in Ethiopian Birr (ETB), Chapa test-mode payment gateway integration, order confirmation, and real-time order status tracking with a 3-stage visual progress stepper.
 2. **Administrative Control:** Dedicated isolated login, real-time inventory management with low-stock badges, manual stock adjustments, order management with immediate order lifecycle updates (`Order Received` → `In Kitchen` → `Sent to Delivery`), and an automated `node-cron` low-stock email alert system.
 
 ---
@@ -21,7 +21,8 @@ The application delivers an end-to-end e-commerce experience:
 
 ### Customer Experience (User Portal)
 - **Authentication & Security:**
-  - Secure customer registration with SHA-256 email verification token generation.
+  - Secure customer registration with Brevo 6-digit email verification code.
+  - "Continue with Google" OAuth 2.0 / OpenID Connect single sign-on (customer-only, safe account linking).
   - JWT issued in an `httpOnly`, `SameSite=Strict` cookie (impervious to XSS theft).
   - Forgot-password flow with time-limited reset tokens (1-hour expiry).
   - Route guards on client and server ensuring only verified customers place orders.
@@ -32,14 +33,15 @@ The application delivers an end-to-end e-commerce experience:
     - **Step 2:** Sauce (required single-select).
     - **Step 3:** Cheese (required single-select).
     - **Step 4:** Vegetables (optional multi-select with zero-to-many options).
-  - Live client price preview, backed by server-authoritative price calculation from MongoDB base prices.
-- **Checkout & Payment (Razorpay Test Mode):**
-  - Order review screen displaying ingredient breakdown and total amount in INR.
-  - Seamless Razorpay test checkout integration.
-  - Server-side cryptographic HMAC-SHA256 signature verification before order confirmation.
-  - Double-confirmation idempotency guards against network retries.
+  - Live client price preview in Ethiopian Birr (ETB), backed by server-authoritative price calculation from MongoDB base prices.
+- **Checkout & Payment (Chapa Test Mode):**
+  - Order review screen displaying ingredient breakdown and total amount in Ethiopian Birr (ETB).
+  - Seamless Chapa hosted checkout redirect integration.
+  - Server-side authoritative verification with Chapa API (`POST /v1/transaction/initialize` and `GET /v1/transaction/verify/:txRef`) before order confirmation.
+  - Double-confirmation idempotency guards against network retries and duplicate webhooks.
+  - Atomic inventory decrement upon successful payment confirmation.
 - **Order Lifecycle & Tracking:**
-  - Dedicated "My Orders" customer portal displaying full chronological order history.
+  - Dedicated "My Orders" customer portal displaying full chronological order history with ETB totals.
   - Live order tracking page with 5-second HTTP polling that auto-stops upon reaching the final state.
   - 3-stage visual stepper: `Order Received` ➔ `In Kitchen` ➔ `Sent to Delivery`.
 
@@ -70,9 +72,9 @@ The application delivers an end-to-end e-commerce experience:
 | :--- | :--- |
 | **Frontend (Client)** | React 18, Vite 5, React Router v6, Tailwind CSS 3, Axios |
 | **Backend (Server)** | Node.js 20 LTS, Express.js 4, Mongoose 8, MongoDB (Atlas / Memory Server) |
-| **Security & Auth** | JSON Web Tokens (`jsonwebtoken`), `bcryptjs` (salt rounds: 12), `cookie-parser`, `helmet`, `cors` |
-| **Payments** | Razorpay Node SDK (Test Mode), Crypto HMAC-SHA256 verification |
-| **Email & Scheduling** | `nodemailer` (Mailtrap SMTP integration), `node-cron` |
+| **Security & Auth** | JSON Web Tokens (`jsonwebtoken`), Google OAuth 2.0 (`google-auth-library`), `bcryptjs`, `cookie-parser`, `helmet`, `cors` |
+| **Payments** | Chapa API v1 (Test Mode), Ethiopian Birr (ETB), unique `txRef`, HMAC Webhook |
+| **Email & Scheduling** | `nodemailer` (Brevo SMTP relay), `node-cron` |
 | **Testing & Quality** | Jest, Supertest, MongoDB Memory Server, ESLint (Airbnb-base), Prettier |
 
 ---
@@ -98,7 +100,7 @@ Pizza Delivery/
 │   └── vite.config.js
 ├── server/                              # Backend Express application
 │   ├── src/
-│   │   ├── config/                      # db.js, constants.js, razorpay.js
+│   │   ├── config/                      # db.js, constants.js
 │   │   ├── controllers/                 # auth, pizzaOptions, order, admin
 │   │   ├── jobs/                        # lowStockCheck.js (node-cron job)
 │   │   ├── middleware/                  # auth.middleware, role.middleware, errorHandler
@@ -107,8 +109,9 @@ Pizza Delivery/
 │   │   ├── scripts/                     # seedAdmin.js, seedPizzaOptions.js
 │   │   ├── services/                    # email.service, payment.service, inventory.service
 │   │   └── utils/                       # apiResponse, generateToken, jwt
-│   ├── tests/                           # 6 Jest test suites (114 automated tests)
+│   ├── tests/                           # 7 Jest test suites (132 automated tests)
 │   │   ├── auth.test.js
+│   │   ├── googleAuth.test.js
 │   │   ├── pizzaOptions.test.js
 │   │   ├── orders.test.js
 │   │   ├── orderTracking.test.js
@@ -139,16 +142,22 @@ CLIENT_ORIGIN=http://localhost:5173
 JWT_SECRET=super_secret_jwt_key_at_least_32_characters_long
 JWT_EXPIRY=7d
 
-# Payment Gateway (Razorpay Test Mode)
-RAZORPAY_KEY_ID=rzp_test_placeholder
-RAZORPAY_KEY_SECRET=placeholder_secret
+# Google OAuth 2.0 (Customer-Only)
+GOOGLE_CLIENT_ID=your_google_client_id_placeholder.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_google_client_secret_placeholder
+GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback
 
-# Email & Automated Alerts (Mailtrap)
-EMAIL_HOST=sandbox.smtp.mailtrap.io
-EMAIL_PORT=2525
-EMAIL_USER=your_mailtrap_user
-EMAIL_PASS=your_mailtrap_pass
-EMAIL_FROM=noreply@pizzaapp.dev
+# Payment Gateway (Chapa Test Mode)
+CHAPA_SECRET_KEY=CHASECK_TEST-your_chapa_test_secret_key_placeholder
+CHAPA_CALLBACK_URL=http://localhost:5001/api/orders/chapa/webhook
+CHAPA_RETURN_URL=http://localhost:5173/payment
+
+# Email & Automated Alerts (Brevo SMTP)
+EMAIL_HOST=smtp-relay.brevo.com
+EMAIL_PORT=587
+EMAIL_USER=your_brevo_smtp_user
+EMAIL_PASS=your_brevo_smtp_pass
+EMAIL_FROM=orders@yourverifieddomain.com
 ADMIN_ALERT_EMAIL=admin@example.com
 
 # Cron Inventory Check
@@ -160,8 +169,8 @@ LOW_STOCK_THRESHOLD=20
 Create a `.env` file in the `client/` directory:
 
 ```dotenv
-VITE_API_BASE_URL=http://localhost:5000/api
-VITE_RAZORPAY_KEY_ID=rzp_test_placeholder
+VITE_API_BASE_URL=/api
+VITE_GOOGLE_CLIENT_ID=your_google_client_id_placeholder.apps.googleusercontent.com
 ```
 
 ---
@@ -240,7 +249,7 @@ The backend includes a comprehensive automated test suite powered by **Jest**, *
 ```bash
 cd server
 
-# Run full regression test suite (114 tests across 6 suites)
+# Run full regression test suite (132 tests across 7 suites)
 npm test
 
 # Run code style & linting audit (Airbnb Base ESLint)
@@ -255,10 +264,11 @@ npm run build
 ```
 
 ### Test Coverage Breakdown
-- `tests/auth.test.js` (24 tests): Registration, duplicate rejection, email verification, password hashing, JWT cookies, protected route authentication, forgot-password, reset tokens.
-- `tests/pizzaOptions.test.js` (17 tests): PizzaOption & InventoryItem schemas, compound indexes, idempotent seed scripts, category filtering APIs.
-- `tests/orders.test.js` (27 tests): Pricing calculation, inventory pre-checks, Razorpay order creation, HMAC signature verification, atomic inventory decrement, double-payment idempotency, degraded fallback.
-- `tests/orderTracking.test.js` (13 tests): Order history isolation, descending timestamp sorting, polling endpoint, ownership authorization, 3-stage lifecycle progression.
+- `tests/auth.test.js` (31 tests): Registration, duplicate rejection, Brevo email verification code, password hashing, JWT cookies, protected route authentication, forgot-password, reset tokens.
+- `tests/googleAuth.test.js` (11 tests): Customer-only Google OAuth 2.0 flow, verified Google email, safe deterministic account linking (preserves password), admin privilege protection, session cookie issuance.
+- `tests/pizzaOptions.test.js` (16 tests): PizzaOption & InventoryItem schemas, compound indexes, idempotent seed scripts, category filtering APIs.
+- `tests/orders.test.js` (27 tests): Authoritative ETB pricing calculation, inventory pre-checks, Chapa transaction initialization, server-side transaction verification (`/verify/:txRef`), atomic inventory decrement, double-confirmation idempotency, degraded fallback.
+- `tests/orderTracking.test.js` (13 tests): Order history isolation, descending timestamp sorting, polling endpoint, ownership authorization, 3-stage lifecycle progression, sensitive payment signature omission.
 - `tests/admin.test.js` (21 tests): Admin access guards, customer JWT rejection (403), inventory retrieval, manual stock updates, negative stock rejection, order listing, status lifecycle updates, live customer polling propagation.
 - `tests/lowStockCron.test.js` (12 tests): Strict threshold detection (`<`), custom threshold evaluation, aggregated alert email dispatch, error safety, scheduler singleton registration.
 
@@ -295,8 +305,8 @@ For evaluation and demonstration purposes, default accounts can be seeded via th
 | **FR-U11** | Step 3: Cheese Selection | `client/src/components/builder/StepCheese.jsx` | Automated Test (`pizzaOptions.test.js`) | ✅ Satisfied |
 | **FR-U12** | Step 4: Vegetable Selection (Optional)| `client/src/components/builder/StepVegetables.jsx`| Automated Test (`orders.test.js`) | ✅ Satisfied |
 | **FR-U13** | Server-Authoritative Order Summary | `server/src/controllers/order.controller.js` | Automated Integration Test (`orders.test.js`) | ✅ Satisfied |
-| **FR-U14** | Razorpay Test-Mode Checkout | `server/src/services/payment.service.js` | Integration Test (`orders.test.js`) | ✅ Satisfied *(Live browser modal PENDING [E])* |
-| **FR-U15** | Server-Side HMAC Verification | `server/src/services/payment.service.js` | Automated Integration Test (`orders.test.js`) | ✅ Satisfied |
+| **FR-U14** | Chapa Test-Mode Checkout | `server/src/services/payment.service.js` | Integration Test (`orders.test.js`) | ✅ Satisfied |
+| **FR-U15** | Server-Side Chapa Verification | `server/src/controllers/order.controller.js` | Automated Integration Test (`orders.test.js`) | ✅ Satisfied |
 | **FR-U16** | 5s Order Status Polling Tracker | `client/src/hooks/useOrderStatus.js` | Automated Test (`orderTracking.test.js`) | ✅ Satisfied |
 | **FR-A01** | Separate Admin Login Page | `client/src/pages/admin/AdminLogin.jsx` | Isolated Route Audit & Role Guard | ✅ Satisfied |
 | **FR-A02** | Seeded Admin Credentials | `server/src/scripts/seedAdmin.js` | Automated Test (`pizzaOptions.test.js`) | ✅ Satisfied |
@@ -318,9 +328,9 @@ When recording the final internship demonstration video:
    - Track: Web Development & Designing
    - Task Title: Level 3 Task 1 — Pizza Delivery Full-Stack Application
 2. **Demonstration Sequence:**
-   - Customer Registration & Email Verification.
-   - Login & Custom Pizza Customization (4-step builder).
-   - Server price calculation, Razorpay test checkout, and confirmation.
+   - Customer Registration & Email Verification (or "Continue with Google").
+   - Login & Custom Pizza Customization (4-step builder with ETB pricing).
+   - Server price calculation, Chapa test checkout, and return verification.
    - Real-time order tracking (`Order Received` stage).
    - Dedicated Admin Sign In (`/admin/login`).
    - Admin Inventory Management (stock counts, low-stock threshold highlight, manual update).

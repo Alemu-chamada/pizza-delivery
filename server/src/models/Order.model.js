@@ -2,9 +2,8 @@ const mongoose = require('mongoose');
 
 /**
  * Order Mongoose Schema
- * Stores customer pizza orders, server-computed pricing,
- * Razorpay identifiers, payment status, and order lifecycle states.
- * Plan Reference: project_plan.md §9.6
+ * Stores customer pizza orders, server-computed pricing in ETB,
+ * payment provider identifiers (Chapa), payment status, and order lifecycle states.
  */
 const orderSchema = new mongoose.Schema({
   customer: {
@@ -34,12 +33,16 @@ const orderSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'PizzaOption',
       },
-    ], // Empty array is valid per §9.6 and §18 Decision 8
+    ],
   },
   totalPrice: {
     type: Number,
     required: [true, 'Total price is required'],
     min: [0, 'Total price cannot be negative'],
+  },
+  currency: {
+    type: String,
+    default: 'ETB',
   },
   orderStatus: {
     type: String,
@@ -51,10 +54,30 @@ const orderSchema = new mongoose.Schema({
     enum: ['pending', 'paid', 'failed'],
     default: 'pending',
   },
+  paymentProvider: {
+    type: String,
+    enum: ['chapa', 'razorpay'],
+    default: 'chapa',
+  },
+  txRef: {
+    type: String,
+    unique: true,
+    sparse: true,
+    index: true,
+  },
+  paymentReference: {
+    type: String,
+    default: null,
+  },
+  paidAt: {
+    type: Date,
+    default: null,
+  },
+  // Backward compatibility fields for legacy records
   razorpayOrderId: {
     type: String,
-    required: [true, 'Razorpay order ID is required'],
-    unique: true, // Prevents duplicate confirmed orders
+    sparse: true,
+    default: null,
   },
   razorpayPaymentId: {
     type: String,
@@ -63,6 +86,7 @@ const orderSchema = new mongoose.Schema({
   razorpaySignature: {
     type: String,
     default: null,
+    select: false,
   },
   createdAt: {
     type: Date,

@@ -44,7 +44,7 @@ export function PizzaOptionCard({ option, selected, onSelect, multiple = false }
             <p className="mt-2 text-sm leading-5 text-stone-500">{option.description}</p>
           </div>
           <span className="whitespace-nowrap text-sm font-bold text-tomato">
-            +₹{Number(option.price).toFixed(2)}
+            +{Number(option.price).toFixed(2)} ETB
           </span>
         </div>
       </div>

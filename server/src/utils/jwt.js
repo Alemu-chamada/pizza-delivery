@@ -25,8 +25,8 @@ const verifyToken = (token) => jwt.verify(
  * @param {object} res - Express response object
  * @param {string} token - Signed JWT token
  */
-const sendTokenCookie = (res, token) => {
-  res.cookie('token', token, COOKIE_OPTIONS);
+const sendTokenCookie = (res, token, options = {}) => {
+  res.cookie('token', token, { ...COOKIE_OPTIONS, ...options });
 };
 
 /**

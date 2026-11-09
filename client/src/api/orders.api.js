@@ -1,7 +1,7 @@
 import api from './axios';
 
-export const createRazorpayOrder = async ({ base, sauce, cheese, vegetables = [] }) => {
-  const response = await api.post('/orders/create-razorpay-order', {
+export const createOrder = async ({ base, sauce, cheese, vegetables = [] }) => {
+  const response = await api.post('/orders/create-order', {
     base,
     sauce,
     cheese,
@@ -10,11 +10,12 @@ export const createRazorpayOrder = async ({ base, sauce, cheese, vegetables = []
   return response.data;
 };
 
-export const verifyPayment = async ({ razorpayOrderId, razorpayPaymentId, razorpaySignature }) => {
+export const createChapaOrder = createOrder;
+
+export const verifyPayment = async ({ txRef, orderId } = {}) => {
   const response = await api.post('/orders/verify-payment', {
-    razorpayOrderId,
-    razorpayPaymentId,
-    razorpaySignature,
+    txRef,
+    orderId,
   });
   return response.data;
 };

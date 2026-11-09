@@ -95,7 +95,7 @@ export function AdminOverview() {
 
   const stats = [
     ["Total Orders", String(totalOrdersCount), ShoppingBag],
-    ["Paid Revenue", `₹${totalRevenue.toFixed(2)}`, CreditCard],
+    ["Paid Revenue", `${totalRevenue.toFixed(2)} ETB`, CreditCard],
     ["Inventory Items", String(inventory.length), Leaf],
     ["Low-Stock Items", String(lowStockItems.length), AlertCircle],
   ];

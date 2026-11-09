@@ -20,7 +20,20 @@ const userSchema = new mongoose.Schema({
   },
   passwordHash: {
     type: String,
-    required: true,
+    required() {
+      // Password is required for accounts that are not authenticated via Google OAuth
+      return !this.googleId;
+    },
+  },
+  googleId: {
+    type: String,
+    sparse: true,
+    index: true,
+  },
+  authProvider: {
+    type: String,
+    enum: ['local', 'google'],
+    default: 'local',
   },
   isVerified: {
     type: Boolean,
@@ -63,6 +76,9 @@ const userSchema = new mongoose.Schema({
  * @returns {Promise<boolean>} True if match, false otherwise
  */
 userSchema.methods.comparePassword = async function comparePassword(candidatePassword) {
+  if (!this.passwordHash) {
+    return false;
+  }
   return bcrypt.compare(candidatePassword, this.passwordHash);
 };
 

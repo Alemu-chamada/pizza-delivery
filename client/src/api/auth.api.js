@@ -54,3 +54,17 @@ export const resetPassword = async ({ token, password }) => {
   const response = await api.post('/auth/reset-password', { token, password });
   return response.data;
 };
+
+export const getGoogleAuthUrl = (returnTo = '', from = '') => {
+  const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
+  const params = new URLSearchParams();
+  if (returnTo) params.set('returnTo', returnTo);
+  if (from) params.set('from', from);
+  const qs = params.toString();
+  return qs ? `${baseURL}/auth/google?${qs}` : `${baseURL}/auth/google`;
+};
+
+export const googleAuth = async ({ idToken, credential, code }) => {
+  const response = await api.post('/auth/google', { idToken, credential, code });
+  return response.data;
+};

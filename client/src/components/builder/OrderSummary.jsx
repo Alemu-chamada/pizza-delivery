@@ -41,7 +41,7 @@ export function OrderSummary({ options = { base: [], sauce: [], cheese: [], vege
       <div className="mt-6 border-t border-stone-200 pt-5">
         <div className="flex items-center justify-between">
           <span className="font-bold">Estimated price</span>
-          <span className="font-display text-2xl font-bold text-tomato">₹{total.toFixed(2)}</span>
+          <span className="font-display text-2xl font-bold text-tomato">{total.toFixed(2)} ETB</span>
         </div>
         <p className="mt-2 text-xs leading-5 text-stone-500">
           Final pricing and availability will be confirmed by the kitchen.

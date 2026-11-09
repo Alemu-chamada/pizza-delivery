@@ -1,16 +1,37 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Mail, User } from 'lucide-react';
 import { AuthShell } from '../components/layout/AuthShell';
-import { Input, PasswordInput, Button, Alert } from '../components/common/UI';
+import { Input, PasswordInput, Button, Alert, GoogleIcon } from '../components/common/UI';
 import * as authApi from '../api/auth.api';
 
 export function Register() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const errCode = searchParams.get('error');
+    if (errCode) {
+      const errorMap = {
+        cancelled: 'Google sign-in was cancelled.',
+        google_cancelled: 'Google sign-in was cancelled.',
+        admin_oauth_prohibited: 'Admin accounts cannot sign in using Google. Please use the Admin portal.',
+        google_oauth_not_configured: 'Google OAuth is not configured yet in server environment.',
+        unverified_google_email: 'Your Google email is unverified. Please verify your email with Google first.',
+        invalid_state: 'Security verification failed during Google sign-in. Please try again.',
+        oauth_failed: 'Google authentication failed. Please try again or use your password.',
+      };
+      setServerError(errorMap[errCode] || 'Google authentication failed. Please try again.');
+    }
+  }, [searchParams]);
+
+  const handleGoogleAuth = () => {
+    window.location.href = authApi.getGoogleAuthUrl('/dashboard', '/register');
+  };
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
@@ -58,7 +79,29 @@ export function Register() {
       title="Create your account"
       subtitle="Save your favorites and track every order in one place."
     >
-      <form className="space-y-5" onSubmit={submit} noValidate>
+      <div className="space-y-5">
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={handleGoogleAuth}
+          className="w-full flex items-center justify-center gap-3 border border-stone-300 bg-white hover:bg-cream"
+        >
+          <GoogleIcon className="h-5 w-5" />
+          <span>Continue with Google</span>
+        </Button>
+
+        <div className="relative my-2 text-center">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-stone-200" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-white px-3 font-semibold tracking-wider text-stone-400">
+              or register with email
+            </span>
+          </div>
+        </div>
+
+        <form className="space-y-5" onSubmit={submit} noValidate>
         {serverError && (
           <div className="space-y-2">
             <Alert type="error">{serverError}</Alert>
@@ -116,6 +159,7 @@ export function Register() {
             </Link>
           </p>
         </form>
+      </div>
     </AuthShell>
   );
 }

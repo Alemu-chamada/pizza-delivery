@@ -11,6 +11,8 @@ server/.env.*
 client/.env
 client/.env.*
 *.env
+client_secret*.json
+client_secret_169831382494-ir42d5cu4bt02jp06hsdgtvg11560ih2.apps.googleusercontent.com.json
 !.env.example
 !server/.env.example
 !client/.env.example

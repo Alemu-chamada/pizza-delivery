@@ -41,7 +41,7 @@ export function OrderCard({ order }) {
         <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:w-[25rem]">
           <div>
             <span className="text-xs text-stone-400">Total</span>
-            <b className="mt-1 block">₹{Number(order.total).toFixed(2)}</b>
+            <b className="mt-1 block">{Number(order.total).toFixed(2)} ETB</b>
           </div>
           <div>
             <span className="text-xs text-stone-400">Payment</span>

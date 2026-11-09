@@ -48,7 +48,7 @@ export function Footer() {
               </span>
               <span className="inline-flex items-center gap-1 rounded-full border border-stone-700 bg-stone-900/60 px-3 py-1 text-xs font-medium text-stone-300">
                 <Shield size={12} className="text-emerald-400" />
-                Razorpay Verified
+                Chapa Verified
               </span>
             </div>
 
