@@ -465,27 +465,7 @@ For evaluation and demonstration purposes, default accounts can be seeded via th
 | **FR-A08** | Order Lifecycle Status Updates | `server/src/controllers/admin.controller.js` | Automated Integration Test (`admin.test.js`) | ✅ Satisfied |
 | **FR-A09** | Immediate Status Propagation | `server/tests/admin.test.js` | Automated Integration Test (`admin.test.js`) | ✅ Satisfied |
 
----
 
-## 📹 Submission Video Guidelines (OIB-SIP)
-
-When recording the final internship demonstration video:
-1. **Title Card:** Display a static title card for $\ge 2$ seconds displaying:
-   - Full Name
-   - Track: Web Development & Designing
-   - Task Title: Level 3 Task 1 — Pizza Delivery Full-Stack Application
-2. **Demonstration Sequence:**
-   - Customer Registration & Email Verification (or "Continue with Google").
-   - Login & Custom Pizza Customization (4-step builder with ETB pricing).
-   - Server price calculation, Chapa test checkout, and return verification.
-   - Real-time order tracking (`Order Received` stage).
-   - Dedicated Admin Sign In (`/admin/login`).
-   - Admin Inventory Management (stock counts, low-stock threshold highlight, manual update).
-   - Admin Order Management (transition status to `In Kitchen` and `Sent to Delivery`).
-   - Customer Order Tracker screen automatically updating within 5 seconds.
-3. **Submission Tag:** Upload video to LinkedIn tagged with `#oasisinfobyte`.
-
----
 
 ## 📄 License & Attribution
 
