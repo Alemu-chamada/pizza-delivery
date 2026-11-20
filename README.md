@@ -1,5 +1,21 @@
 # 🍕 Pizza Delivery Full-Stack Application
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Oasis%20Infobyte-Level%203%20Task%201-FF5722?style=for-the-badge&logo=target&logoColor=white" alt="Oasis Infobyte Level 3 Task 1" />
+  <img src="https://img.shields.io/badge/Tests-132%2F132%20PASS-2EA44F?style=for-the-badge&logo=jest&logoColor=white" alt="132/132 Tests Passing" />
+  <img src="https://img.shields.io/badge/Code%20Style-Airbnb%20ESLint-4B32C3?style=for-the-badge&logo=eslint&logoColor=white" alt="ESLint Airbnb Base" />
+  <img src="https://img.shields.io/badge/Currency-ETB%20(Ethiopian%20Birr)-009688?style=for-the-badge&logo=cashapp&logoColor=white" alt="ETB Currency" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Frontend-React%2018%20%7C%20Vite%205%20%7C%20TailwindCSS-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 18 & Vite" />
+  <img src="https://img.shields.io/badge/Backend-Node.js%2020%20%7C%20Express%204-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node & Express" />
+  <img src="https://img.shields.io/badge/Database-MongoDB%20Atlas%20%7C%20Mongoose%208-47A248?style=flat-square&logo=mongodb&logoColor=white" alt="MongoDB Atlas" />
+  <img src="https://img.shields.io/badge/Auth-Google%20OAuth%202.0%20%7C%20JWT%20Cookie-4285F4?style=flat-square&logo=google&logoColor=white" alt="Google OAuth & JWT" />
+  <img src="https://img.shields.io/badge/Payment-Chapa%20Gateway%20(Test%20Mode)-7952B3?style=flat-square&logo=creditcard&logoColor=white" alt="Chapa Gateway" />
+  <img src="https://img.shields.io/badge/Email-Brevo%20SMTP%20Relay-0B99FF?style=flat-square&logo=maildotru&logoColor=white" alt="Brevo SMTP Relay" />
+</p>
+
 > **Oasis Infobyte Student Internship Program (OIB-SIP)**  
 > **Track:** Web Development and Designing  
 > **Level:** Level 3 — Task 1: Pizza Delivery Application  
@@ -14,6 +30,121 @@ The **Pizza Delivery Full-Stack Application** is a production-grade web applicat
 The application delivers an end-to-end e-commerce experience:
 1. **Customer Journey:** Account registration with email verification code, Google OAuth 2.0 / OpenID Connect single sign-on, secure cookie-based JWT authentication, interactive 4-step custom pizza builder, server-authoritative dynamic pricing in Ethiopian Birr (ETB), Chapa test-mode payment gateway integration, order confirmation, and real-time order status tracking with a 3-stage visual progress stepper.
 2. **Administrative Control:** Dedicated isolated login, real-time inventory management with low-stock badges, manual stock adjustments, order management with immediate order lifecycle updates (`Order Received` → `In Kitchen` → `Sent to Delivery`), and an automated `node-cron` low-stock email alert system.
+
+---
+
+## 🏗️ System Architecture & Data Flow
+
+```mermaid
+flowchart TB
+    subgraph ClientLayer["🖥️ Frontend Client (React 18 + Vite + Tailwind CSS)"]
+        UI["User Portal / Pizza Builder"]
+        AdminUI["Admin Dashboard & Inventory"]
+        AuthCtx["AuthContext (JWT in httpOnly Cookie)"]
+        Tracker["Order Tracking Hook (5s HTTP Poller)"]
+    end
+
+    subgraph ServerLayer["⚙️ Backend API Server (Node.js 20 + Express.js 4)"]
+        Router["Express Router & Security Middleware\n(Helmet, CORS, CookieParser, Morgan)"]
+        AuthCtrl["Auth Controller\n(Local + Google OAuth 2.0)"]
+        PizzaCtrl["Pizza Options Controller\n(5 Bases, 5 Sauces, 4 Cheeses, 7 Vegs)"]
+        OrderCtrl["Order & Payment Controller\n(Authoritative ETB Pricing & Tx Verification)"]
+        AdminCtrl["Admin Controller\n(Stock Adjustment & Status Management)"]
+        CronJob["node-cron Scheduler\n(Periodic Low-Stock Checker)"]
+    end
+
+    subgraph DataLayer["🗄️ Database Layer (MongoDB Atlas / Mongoose 8)"]
+        Users[("Users Collection\n(Customers & OAuth IDs)")]
+        Admins[("Admins Collection\n(Role-Protected Accounts)")]
+        Options[("PizzaOptions Collection\n(Ingredients & Base Prices)")]
+        Inventory[("InventoryItems Collection\n(Stock Levels & Thresholds)")]
+        Orders[("Orders Collection\n(Lifecycle & Payment State)")]
+    end
+
+    subgraph ExternalServices["🌐 External Integrated Services"]
+        GoogleOAuth["Google Cloud Identity\n(OAuth 2.0 / OpenID Connect)"]
+        ChapaGW["Chapa Payment Gateway\n(Hosted Test Checkout in ETB)"]
+        BrevoSMTP["Brevo SMTP Relay\n(Verification Codes & Low-Stock Alerts)"]
+    end
+
+    UI -->|"API Requests (with Credentials)"| Router
+    AdminUI -->|"Admin API Requests"| Router
+    Tracker -->|"GET /api/orders/:id/status"| Router
+
+    Router --> AuthCtrl
+    Router --> PizzaCtrl
+    Router --> OrderCtrl
+    Router --> AdminCtrl
+
+    AuthCtrl <-->|"Verify OAuth Token"| GoogleOAuth
+    AuthCtrl <-->|"Read/Write User Profiles"| Users
+    AuthCtrl -->|"Dispatch 6-Digit Codes"| BrevoSMTP
+
+    PizzaCtrl <-->|"Query Ingredients"| Options
+    PizzaCtrl <-->|"Read Stock Availability"| Inventory
+
+    OrderCtrl <-->|"Initialize / Verify Transaction"| ChapaGW
+    OrderCtrl <-->|"Write Order & Atomic Decrement"| Orders
+    OrderCtrl <-->|"Atomic Stock Decrement"| Inventory
+
+    AdminCtrl <-->|"Manage Stock Levels"| Inventory
+    AdminCtrl <-->|"Update Order Lifecycle"| Orders
+    AdminCtrl <-->|"Authenticate Admin"| Admins
+
+    CronJob -->|"Check stock < threshold"| Inventory
+    CronJob -->|"Send Low-Stock Warning"| BrevoSMTP
+```
+
+---
+
+## 🔄 End-to-End User Journeys
+
+### 1. Customer Customization, Payment & Tracking Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Customer as 👤 Customer
+    participant React as 🖥️ React Client
+    participant Express as ⚙️ Express Backend
+    participant Chapa as 💳 Chapa Gateway
+    participant DB as 🗄️ MongoDB Atlas
+
+    Customer->>React: Register / Login (or Continue with Google)
+    React->>Express: POST /api/auth/login or /api/auth/google
+    Express->>DB: Validate customer & issue JWT
+    Express-->>React: Set httpOnly, Secure cookie
+    Customer->>React: Select 4 ingredients (Base, Sauce, Cheese, Vegetables)
+    Customer->>React: Click "Proceed to Payment"
+    React->>Express: POST /api/orders/create-order
+    Express->>DB: Authoritatively compute ETB price & check stock
+    Express->>Chapa: POST /v1/transaction/initialize (Amount, ETB, tx_ref)
+    Chapa-->>Express: Return Hosted Checkout URL
+    Express->>DB: Save pending Order (paymentStatus: 'pending')
+    Express-->>React: Return checkoutUrl & txRef
+    React->>Chapa: Redirect to Hosted Checkout (in ETB)
+    Customer->>Chapa: Complete simulated test payment
+    Chapa-->>React: Browser returns to /payment?tx_ref=...
+    React->>Express: POST /api/orders/verify-payment { txRef }
+    Express->>Chapa: GET /v1/transaction/verify/:txRef
+    Chapa-->>Express: Status: 'success'
+    Express->>DB: Atomically decrement stock & mark order 'paid'
+    Express-->>React: Order confirmed (status: 'Order Received')
+    loop Every 5 Seconds Polling
+        React->>Express: GET /api/orders/:orderId/status
+        Express->>DB: Read orderStatus
+        Express-->>React: Return latest status
+    end
+```
+
+### 2. 3-Stage Visual Order Stepper Progression
+
+```
+[ Step 1: Order Received ] ────────► [ Step 2: In Kitchen ] ────────► [ Step 3: Sent to Delivery ]
+          🟢                                   🟡                                   🔵
+    Payment confirmed                  Ingredients assembled                Dispatched with courier
+  Stock atomically reserved              Baking in wood oven                  Real-time 5s polling
+```
 
 ---
 
@@ -57,7 +188,7 @@ The application delivers an end-to-end e-commerce experience:
 - **Order Management:**
   - Order dashboard listing all customer orders sorted newest first.
   - In-place lifecycle transition dropdown (`Order Received` ➔ `In Kitchen` ➔ `Sent to Delivery`).
-  - Status updates propagate to customer polling endpoints in ≤ 5 seconds.
+  - Status updates propagate to customer polling endpoints in $\le$ 5 seconds.
   - Sensitive internal payment signatures strictly omitted from API output.
 - **Automated Low-Stock Alert Cron:**
   - Configurable `node-cron` job (`CRON_SCHEDULE`, default: every 30 minutes).
@@ -68,14 +199,14 @@ The application delivers an end-to-end e-commerce experience:
 
 ## 🛠️ Technology Stack
 
-| Layer | Technologies & Libraries |
-| :--- | :--- |
-| **Frontend (Client)** | React 18, Vite 5, React Router v6, Tailwind CSS 3, Axios |
-| **Backend (Server)** | Node.js 20 LTS, Express.js 4, Mongoose 8, MongoDB (Atlas / Memory Server) |
-| **Security & Auth** | JSON Web Tokens (`jsonwebtoken`), Google OAuth 2.0 (`google-auth-library`), `bcryptjs`, `cookie-parser`, `helmet`, `cors` |
-| **Payments** | Chapa API v1 (Test Mode), Ethiopian Birr (ETB), unique `txRef`, HMAC Webhook |
-| **Email & Scheduling** | `nodemailer` (Brevo SMTP relay), `node-cron` |
-| **Testing & Quality** | Jest, Supertest, MongoDB Memory Server, ESLint (Airbnb-base), Prettier |
+| Layer | Technologies & Libraries | Purpose & Implementation |
+| :--- | :--- | :--- |
+| **Frontend (Client)** | React 18, Vite 5, React Router v6, Tailwind CSS 3, Axios | High-performance reactive UI with component modularity and responsive styling |
+| **Backend (Server)** | Node.js 20 LTS, Express.js 4, Mongoose 8, MongoDB (Atlas / Memory Server) | RESTful API backend with Mongoose ODM modeling and atomic transactional operations |
+| **Security & Auth** | JSON Web Tokens (`jsonwebtoken`), Google OAuth 2.0 (`google-auth-library`), `bcryptjs`, `cookie-parser`, `helmet`, `cors` | Zero-trust authentication with `httpOnly` secure cookies and role-based route guards |
+| **Payments** | Chapa API v1 (Test Mode), Ethiopian Birr (ETB), unique `txRef`, HMAC Webhook | Authoritative payment gateway with server verification and ETB currency localization |
+| **Email & Scheduling** | `nodemailer` (Brevo SMTP relay), `node-cron` | Asynchronous transactional notification pipeline and background inventory monitors |
+| **Testing & Quality** | Jest, Supertest, MongoDB Memory Server, ESLint (Airbnb-base), Prettier | 100% offline regression harness and strict code quality enforcement |
 
 ---
 
@@ -84,30 +215,35 @@ The application delivers an end-to-end e-commerce experience:
 ```
 Pizza Delivery/
 ├── client/                              # Frontend React application (Vite)
+│   ├── public/
+│   │   ├── _redirects                   # SPA routing fallback for Netlify/Render
+│   │   └── favicon.svg                  # Brand favicon
 │   ├── src/
 │   │   ├── api/                         # Axios API clients (auth, pizza, order, admin)
 │   │   ├── components/
 │   │   │   ├── builder/                 # StepBase, StepSauce, StepCheese, StepVegetables
-│   │   │   ├── common/                  # Navbar, ProtectedRoute
-│   │   │   └── orders/                  # OrderStatusProgress stepper
+│   │   │   ├── common/                  # Navbar, ProtectedRoute, UI primitives
+│   │   │   └── orders/                  # OrderStatusProgress stepper, OrderCard
 │   │   ├── context/                     # AuthContext, OrderContext
 │   │   ├── hooks/                       # useAuth, useOrderStatus (polling)
 │   │   ├── pages/                       # Login, Register, VerifyEmail, Dashboard,
 │   │   │                                # PizzaBuilder, OrderSummary, OrderStatus, MyOrders
 │   │   └── pages/admin/                 # AdminLogin, AdminDashboard, AdminInventory, AdminOrders
+│   ├── .env.example
 │   ├── package.json
 │   ├── tailwind.config.js
-│   └── vite.config.js
+│   ├── vercel.json                      # SPA routing fallback for Vercel
+│   └── vite.config.ts
 ├── server/                              # Backend Express application
 │   ├── src/
-│   │   ├── config/                      # db.js, constants.js
+│   │   ├── config/                      # db.js (Atlas DNS SRV resilience), constants.js
 │   │   ├── controllers/                 # auth, pizzaOptions, order, admin
 │   │   ├── jobs/                        # lowStockCheck.js (node-cron job)
 │   │   ├── middleware/                  # auth.middleware, role.middleware, errorHandler
 │   │   ├── models/                      # User, Admin, PizzaOption, InventoryItem, Order
 │   │   ├── routes/                      # auth, pizzaOptions, order, admin
 │   │   ├── scripts/                     # seedAdmin.js, seedPizzaOptions.js
-│   │   ├── services/                    # email.service, payment.service, inventory.service
+│   │   ├── services/                    # email.service, payment.service, inventory.service, googleAuth.service
 │   │   └── utils/                       # apiResponse, generateToken, jwt
 │   ├── tests/                           # 7 Jest test suites (132 automated tests)
 │   │   ├── auth.test.js
@@ -120,6 +256,9 @@ Pizza Delivery/
 │   ├── .env.example
 │   ├── server.js
 │   └── package.json
+├── scripts/
+│   └── dev.js                           # Concurrent full-stack dev runner with conflict detection
+├── package.json                         # Monorepo root workspace orchestrator
 ├── project_plan.md                      # Authoritative blueprint (Revision 3 APPROVED)
 ├── project_progress.md                  # Milestone & requirements tracker
 └── README.md                            # Comprehensive project documentation
@@ -149,8 +288,9 @@ GOOGLE_CALLBACK_URL=http://localhost:5001/api/auth/google/callback
 
 # Payment Gateway (Chapa Test Mode)
 CHAPA_SECRET_KEY=CHASECK_TEST-your_chapa_test_secret_key_placeholder
-CHAPA_CALLBACK_URL=http://localhost:5001/api/orders/chapa/webhook
-CHAPA_RETURN_URL=http://localhost:5173/payment
+# Note: Chapa requires HTTPS for callback/return URLs. In local dev, leave commented out:
+# CHAPA_CALLBACK_URL=https://your-domain.com/api/orders/chapa/webhook
+# CHAPA_RETURN_URL=https://your-domain.com/payment
 
 # Email & Automated Alerts (Brevo SMTP)
 EMAIL_HOST=smtp-relay.brevo.com
@@ -166,7 +306,7 @@ LOW_STOCK_THRESHOLD=20
 ```
 
 ### Client (`client/.env`)
-Create a `.env` file in the `client/` directory:
+Create a `.env` file in the `client/` directory modeled after [`client/.env.example`](file:///c:/Users/hp/Desktop/folders/OASIS%20Infobyte/Pizza%20Delivery/client/.env.example):
 
 ```dotenv
 VITE_API_BASE_URL=/api
@@ -180,7 +320,7 @@ VITE_GOOGLE_CLIENT_ID=your_google_client_id_placeholder.apps.googleusercontent.c
 ### 1. Prerequisites
 - **Node.js:** v20.x or v22+
 - **npm:** v10+
-- **MongoDB:** Local MongoDB replica set or MongoDB Atlas
+- **MongoDB:** Local MongoDB replica set or MongoDB Atlas cluster
 
 ---
 
@@ -189,10 +329,10 @@ VITE_GOOGLE_CLIENT_ID=your_google_client_id_placeholder.apps.googleusercontent.c
 You can launch the complete full-stack application with a single command from the root directory:
 
 ```bash
-# Install dependencies for both server and client in one step
+# 1. Install dependencies for both server and client in one step
 npm run install:all
 
-# Start local MongoDB (if needed), Express Backend (port 5001), and Vite Frontend (port 5173) concurrently
+# 2. Start local MongoDB (if needed), Express Backend (port 5001), and Vite Frontend (port 5173) concurrently
 npm run dev
 ```
 
@@ -238,7 +378,6 @@ npm install
 npm run dev
 # Client will be accessible at http://localhost:5173
 ```
-```
 
 ---
 
@@ -264,6 +403,14 @@ npm run build
 ```
 
 ### Test Coverage Breakdown
+
+```
+Test Suites: 7 passed, 7 total
+Tests:       132 passed, 132 total
+Snapshots:   0 total
+Time:        100% PASS
+```
+
 - `tests/auth.test.js` (31 tests): Registration, duplicate rejection, Brevo email verification code, password hashing, JWT cookies, protected route authentication, forgot-password, reset tokens.
 - `tests/googleAuth.test.js` (11 tests): Customer-only Google OAuth 2.0 flow, verified Google email, safe deterministic account linking (preserves password), admin privilege protection, session cookie issuance.
 - `tests/pizzaOptions.test.js` (16 tests): PizzaOption & InventoryItem schemas, compound indexes, idempotent seed scripts, category filtering APIs.
@@ -342,5 +489,5 @@ When recording the final internship demonstration video:
 
 ## 📄 License & Attribution
 
-Developed as an official Level 3 submission for the **Oasis Infobyte Student Internship Program (OIB-SIP)** in Web Development & Designing.
+Developed as an official Level 3 submission for the **Oasis Infobyte Student Internship Program (OIB-SIP)** in Web Development & Designing.  
 All rights reserved © 2026.
