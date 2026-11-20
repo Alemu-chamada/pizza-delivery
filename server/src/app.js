@@ -1,3 +1,5 @@
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -36,6 +38,18 @@ app.use('/api/auth', authRoutes);
 app.use('/api/pizza-options', pizzaOptionsRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/admin', adminRoutes);
+
+// In production, serve frontend client build if present
+const clientDistPath = path.resolve(__dirname, '../../client/dist');
+if (process.env.NODE_ENV === 'production' && fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path === '/health') {
+      return next();
+    }
+    return res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
+}
 
 // Centralized error handler (registered last)
 app.use(errorHandler);
